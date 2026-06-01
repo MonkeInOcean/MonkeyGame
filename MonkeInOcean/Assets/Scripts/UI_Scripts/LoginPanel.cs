@@ -22,8 +22,8 @@ public class LoginPanel : MonoBehaviour
 		print("Login button clicked with email: " + emailInput.text);
 		print("Login button clicked with password: " + passwordInput.text);
 		auth.Login(
-			emailInput.text.Trim(),
-			passwordInput.text.Trim(),
+			CleanInput(emailInput.text),
+			CleanInput(passwordInput.text),
 			profile =>
 			{
 				Debug.Log("Welcome " + profile.username);
@@ -36,4 +36,14 @@ public class LoginPanel : MonoBehaviour
 			}
 		);
 	}
+	private string CleanInput(string value)
+	{
+		return value
+			.Trim()
+			.Replace("\u200B", "") // Zero Width Space
+			.Replace("\uFEFF", "") // BOM
+			.Replace("\u200C", "") // Zero Width Non-Joiner
+			.Replace("\u200D", ""); // Zero Width Joiner
+	}
+
 }

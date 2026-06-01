@@ -25,6 +25,11 @@ public class APIManager : MonoBehaviour
 
 		Instance = this;
 		DontDestroyOnLoad(gameObject);
+
+		if (IsLoggedIn())
+		{
+			SetToken(PlayerPrefs.GetString("jwt"));
+		}
 	}
 
 	public void SetToken(string token)
@@ -104,5 +109,10 @@ public class APIManager : MonoBehaviour
 
 			onError?.Invoke(request.downloadHandler.text);
 		}
+	}
+
+	public bool IsLoggedIn()
+	{
+		return PlayerPrefs.HasKey("jwt");
 	}
 }

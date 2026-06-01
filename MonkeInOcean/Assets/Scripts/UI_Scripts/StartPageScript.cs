@@ -17,7 +17,7 @@ public class StartPageScript : MonoBehaviour
 	{
 		startButton.onClick.AddListener(OnStartClicked);
 
-		ShowStart();
+		//ShowStart();
 	}
 
 	private void OnStartClicked()

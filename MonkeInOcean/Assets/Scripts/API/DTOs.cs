@@ -28,4 +28,22 @@ public class DTOs
 		public string token;
 		public PlayerProfile profile;
 	}
+	[Serializable]
+	public class RoomData
+	{
+		public string id;
+		public string name;
+		public string code;
+		public int maxPlayers;
+		public bool isPrivate;
+		public int playerCount;
+		public bool isHost;
+		public string createdAt;
+	}
+
+	[Serializable]
+	public class RoomListResponse
+	{
+		public RoomData[] rooms;
+	}
 }
