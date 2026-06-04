@@ -7,22 +7,38 @@ public class PlayerMovement : MonoBehaviour
 	[Header("Movement")]
 	[SerializeField] private float walkSpeed = 4f;
 	[SerializeField] private float sprintSpeed = 8f;
-	[SerializeField] private float swimSpeed = 2.5f;
+
+	[Header("Swimming")]
+	[SerializeField] private float swimSpeedSubmerged = 3.5f;
+	[SerializeField] private float swimSpeedSurface = 5.5f;
+	[SerializeField] private float swimAcceleration = 12f;
+	[SerializeField] private float swimDeceleration = 8f;
+	[SerializeField] private LayerMask waterMask;
+
+	[SerializeField] private float surfaceThreshold = 0.3f;
+	
+	[SerializeField] private Transform cameraTransform;
+	[SerializeField] private float swimTurnSpeed = 8f;
+	[SerializeField] private float swimDrag = 2.5f;
+	[SerializeField] private float surfaceBoostMultiplier = 1.6f;
+	[SerializeField] private float verticalSpeed = 0.8f;
 
 	[Header("Jump")]
 	[SerializeField] private float jumpForce = 5f;
 	[SerializeField] private float groundOffset = 0.1f;
 	[SerializeField] private LayerMask groundMask;
-
-	[Header("Swimming")]
-	[SerializeField] private LayerMask waterMask;
-	[SerializeField] private float surfaceThreshold = 0.3f;
+	[SerializeField] private float jumpHeight = 1.5f;
+	[SerializeField] private float gravity = -9.81f;
 
 	[Header("Attack")]
 	[SerializeField] private float attackCooldown = 0.6f;
 
 	[Header("References")]
 	[SerializeField] private Animator animator;
+
+	[Header("Particles")]
+	[SerializeField] private ParticleSystem runParticle;
+	[SerializeField] private ParticleSystem jumpParticle;
 
 	private Rigidbody rb;
 	private PlayerInputActions inputs;
@@ -33,6 +49,9 @@ public class PlayerMovement : MonoBehaviour
 	private bool isSwimming;
 	private bool isAtSurface;
 	private float attackTimer;
+
+	// swim state
+	private Vector3 swimVelocity;
 
 	// animator hashes
 	private static readonly int HashSpeed = Animator.StringToHash("Speed");
@@ -47,7 +66,11 @@ public class PlayerMovement : MonoBehaviour
 	private void Awake()
 	{
 		rb = GetComponent<Rigidbody>();
+		rb.useGravity = false;
+
 		inputs = new PlayerInputActions();
+
+		runParticle.Stop();
 	}
 
 	private void OnEnable()
@@ -78,9 +101,14 @@ public class PlayerMovement : MonoBehaviour
 	private void FixedUpdate()
 	{
 		if (isSwimming)
+		{
 			HandleSwim();
+		}
 		else
+		{
 			HandleGroundMovement();
+			ApplyGravity();
+		}
 	}
 
 	// ─────────────────────────────────────────
@@ -93,27 +121,68 @@ public class PlayerMovement : MonoBehaviour
 		Vector3 move = transform.right * moveInput.x
 					 + transform.forward * moveInput.y;
 
-		// set velocity directly — tight and responsive
 		Vector3 targetVelocity = move * speed;
-		targetVelocity.y = rb.linearVelocity.y; // preserve gravity/jump Y
+		targetVelocity.y = rb.linearVelocity.y;
 
 		rb.linearVelocity = targetVelocity;
 	}
 
 	// ─────────────────────────────────────────
-	// Swim movement
+	// Swim movement — omnidirectional with momentum
 	// ─────────────────────────────────────────
 	private void HandleSwim()
 	{
-		Vector3 move = transform.right * moveInput.x
-					 + transform.forward * moveInput.y;
+		// 1. CAMERA-RELATIVE DIRECTION (core Subnautica feel)
+		Vector3 camForward = cameraTransform.forward;
+		Vector3 camRight = cameraTransform.right;
 
-		if (isAtSurface && inputs.Player.Jump.IsPressed())
-			move += Vector3.up;
+		// flatten camera vectors so looking up/down doesn't break movement
+		camForward.y = 0f;
+		camRight.y = 0f;
+		camForward.Normalize();
+		camRight.Normalize();
+
+		Vector3 moveDir =
+			camRight * moveInput.x +
+			camForward * moveInput.y;
+
+		// 2. vertical control (continuous, not impulse)
+		if (inputs.Player.Jump.IsPressed())
+			moveDir += Vector3.up * verticalSpeed;
 		else if (!isAtSurface)
-			move += Vector3.down * 0.3f;
+			moveDir += Vector3.down * 2.5f; // gentle sink
 
-		rb.linearVelocity = move * swimSpeed;
+		// 3. speed tuning
+		float baseSpeed = isAtSurface ? swimSpeedSurface : swimSpeedSubmerged;
+
+		if (isAtSurface)
+			baseSpeed *= surfaceBoostMultiplier;
+
+		// 4. target velocity (NO normalization killing analog input)
+		Vector3 targetVelocity = moveDir * baseSpeed;
+
+		// 5. SMOOTH ACCELERATION (Subnautica-like inertia)
+		float accel = (moveDir.sqrMagnitude > 0.01f)
+			? swimAcceleration
+			: swimDeceleration;
+
+		swimVelocity = Vector3.Lerp(
+			swimVelocity,
+			targetVelocity,
+			accel * Time.fixedDeltaTime
+		);
+
+		swimVelocity = Vector3.ClampMagnitude(swimVelocity, 12f);
+
+		// 6. APPLY DRAG (important for underwater feel)
+		swimVelocity = Vector3.Lerp(
+			swimVelocity,
+			Vector3.zero,
+			swimDrag * Time.fixedDeltaTime * (moveDir.sqrMagnitude < 0.01f ? 1f : 0f)
+		);
+
+		// 7. APPLY FINAL VELOCITY
+		rb.linearVelocity = swimVelocity;
 	}
 
 	// ─────────────────────────────────────────
@@ -121,10 +190,23 @@ public class PlayerMovement : MonoBehaviour
 	// ─────────────────────────────────────────
 	private void OnJump(InputAction.CallbackContext ctx)
 	{
-		if (!isGrounded || isSwimming) return;
+		if (!isGrounded || isSwimming)
+			return;
 
-		rb.linearVelocity = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
-		rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
+		Vector3 velocity = rb.linearVelocity;
+		velocity.y = 0f;
+		rb.linearVelocity = velocity;
+
+		ParticleSystem p = Instantiate(jumpParticle, transform.position + Vector3.down * 0.5f, Quaternion.identity);
+		p.Play();
+
+		Destroy(p.gameObject, p.main.duration + p.main.startLifetime.constantMax);
+
+		float jumpVelocity = Mathf.Sqrt(jumpHeight * -2f * gravity);
+
+		rb.AddForce(
+			Vector3.up * jumpVelocity,
+			ForceMode.VelocityChange);
 	}
 
 	// ─────────────────────────────────────────
@@ -136,6 +218,16 @@ public class PlayerMovement : MonoBehaviour
 
 		attackTimer = attackCooldown;
 		animator.SetTrigger(HashAttack);
+	}
+
+	private void ApplyGravity()
+	{
+		if (isSwimming)
+			return;
+
+		rb.AddForce(
+			Vector3.up * gravity,
+			ForceMode.Acceleration);
 	}
 
 	// ─────────────────────────────────────────
@@ -168,7 +260,10 @@ public class PlayerMovement : MonoBehaviour
 
 		isSwimming = inWater;
 
-		// disable gravity when swimming so Rigidbody doesn't fight the swim
+		// reset swim velocity when exiting water
+		if (!isSwimming)
+			swimVelocity = Vector3.zero;
+
 		rb.useGravity = !isSwimming;
 	}
 
@@ -179,8 +274,18 @@ public class PlayerMovement : MonoBehaviour
 	{
 		Vector3 horizontalVel = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
 
-		// normalize to 0-1 range so blend tree thresholds are clean
-		float speedNormalized = Mathf.Clamp01(horizontalVel.magnitude / sprintSpeed);
+		float speedNormalized = Mathf.Clamp01(horizontalVel.magnitude / sprintSpeed) * 2;
+
+		if (speedNormalized > 1.5f && isGrounded)
+		{
+			if (!runParticle.isPlaying)
+				runParticle.Play();
+		}
+		else
+		{
+			if (runParticle.isPlaying)
+				runParticle.Stop();
+		}
 
 		animator.SetFloat(HashSpeed, speedNormalized, 0.05f, Time.deltaTime);
 		animator.SetBool(HashGrounded, isGrounded);

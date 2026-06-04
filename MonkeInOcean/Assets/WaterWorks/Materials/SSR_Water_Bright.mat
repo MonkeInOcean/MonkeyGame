@@ -62,7 +62,7 @@ Material:
     - _Cull: 0
     - _Cutoff: 0
     - _CutoffSpeed: -0.4
-    - _Displacement_Amount: 5
+    - _Displacement_Amount: 3
     - _Displacement_Scale: 1
     - _Displacement_Speed: 0.1
     - _DstBlend: 10
@@ -83,11 +83,11 @@ Material:
     - _SrcBlend: 5
     - _Surface: 1
     - _Tiling: 0.1
-    - _Transparency: 0.8
+    - _Transparency: 0.9
     - _UseFoam: 1
     - _Use_Foam: 1
-    - _WaveDist: 5
-    - _WaveFrequency: 5
+    - _WaveDist: 1
+    - _WaveFrequency: 2
     - _WaveSpeed: 0.1
     - _Wave_Speed: 2
     - _WorkflowMode: 1
