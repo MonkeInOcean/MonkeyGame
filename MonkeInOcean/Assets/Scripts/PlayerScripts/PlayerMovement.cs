@@ -7,38 +7,45 @@ public class PlayerMovement : MonoBehaviour
 	[Header("Movement")]
 	[SerializeField] private float walkSpeed = 4f;
 	[SerializeField] private float sprintSpeed = 8f;
+	[SerializeField] private float underwaterWalkSpeed = 1.5f;
 
 	[Header("Swimming")]
 	[SerializeField] private float swimSpeedSubmerged = 3.5f;
 	[SerializeField] private float swimSpeedSurface = 5.5f;
 	[SerializeField] private float swimAcceleration = 12f;
 	[SerializeField] private float swimDeceleration = 8f;
-	[SerializeField] private LayerMask waterMask;
-
-	[SerializeField] private float surfaceThreshold = 0.3f;
-	
-	[SerializeField] private Transform cameraTransform;
-	[SerializeField] private float swimTurnSpeed = 8f;
-	[SerializeField] private float swimDrag = 2.5f;
 	[SerializeField] private float surfaceBoostMultiplier = 1.6f;
-	[SerializeField] private float verticalSpeed = 0.8f;
+	[SerializeField] private float verticalSpeed = 2f;
+	[SerializeField] private float sinkForce = 2.5f;
+
+	[Header("Surface Bob")]
+	[SerializeField] private float bobAmplitude = 0.04f;
+	[SerializeField] private float bobFrequency = 0.8f;
+
+	[Header("Water")]
+	[SerializeField] private float waterSurfaceY = 95f;
+	[SerializeField] private float eyeLevelOffset = 2.2f;
 
 	[Header("Jump")]
-	[SerializeField] private float jumpForce = 5f;
-	[SerializeField] private float groundOffset = 0.1f;
-	[SerializeField] private LayerMask groundMask;
 	[SerializeField] private float jumpHeight = 1.5f;
 	[SerializeField] private float gravity = -9.81f;
+	[SerializeField] private float groundOffset = 0.1f;
+	[SerializeField] private LayerMask groundMask;
 
 	[Header("Attack")]
 	[SerializeField] private float attackCooldown = 0.6f;
 
 	[Header("References")]
 	[SerializeField] private Animator animator;
+	[SerializeField] private Transform cameraTransform;
+	[SerializeField] private PlayerStats playerStats;
 
 	[Header("Particles")]
 	[SerializeField] private ParticleSystem runParticle;
 	[SerializeField] private ParticleSystem jumpParticle;
+
+	[Header("Look")]
+	[SerializeField] private float sensitivityX = 0.15f;
 
 	private Rigidbody rb;
 	private PlayerInputActions inputs;
@@ -46,30 +53,27 @@ public class PlayerMovement : MonoBehaviour
 	private Vector2 moveInput;
 	private bool isSprinting;
 	private bool isGrounded;
-	private bool isSwimming;
-	private bool isAtSurface;
+	private bool isUndergroundGrounded;
+
+	public bool isSwimming;
+	public bool isAtSurface;
+	public bool isSubmerged;
+
 	private float attackTimer;
-
-	// swim state
 	private Vector3 swimVelocity;
+	private float bobTimer;
 
-	// animator hashes
 	private static readonly int HashSpeed = Animator.StringToHash("Speed");
 	private static readonly int HashGrounded = Animator.StringToHash("IsGrounded");
 	private static readonly int HashSwimming = Animator.StringToHash("IsSwimming");
 	private static readonly int HashAtSurface = Animator.StringToHash("IsAtSurface");
 	private static readonly int HashAttack = Animator.StringToHash("Attack");
 
-	// ─────────────────────────────────────────
-	// Lifecycle
-	// ─────────────────────────────────────────
 	private void Awake()
 	{
 		rb = GetComponent<Rigidbody>();
 		rb.useGravity = false;
-
 		inputs = new PlayerInputActions();
-
 		runParticle.Stop();
 	}
 
@@ -90,11 +94,16 @@ public class PlayerMovement : MonoBehaviour
 	private void Update()
 	{
 		moveInput = inputs.Player.Move.ReadValue<Vector2>();
+
+		float mouseX = inputs.Player.Look.ReadValue<Vector2>().x;
+		transform.Rotate(Vector3.up * mouseX * sensitivityX);
+
 		isSprinting = inputs.Player.Sprint.IsPressed();
 		attackTimer -= Time.deltaTime;
 
+		UpdateWaterState();
 		CheckGround();
-		CheckWater();
+		HandleOxygen();
 		UpdateAnimator();
 	}
 
@@ -102,7 +111,12 @@ public class PlayerMovement : MonoBehaviour
 	{
 		if (isSwimming)
 		{
-			HandleSwim();
+			if (isUndergroundGrounded)
+				HandleUnderwaterWalking();
+			else if (isAtSurface)
+				HandleSurface();
+			else
+				HandleSubmerged();
 		}
 		else
 		{
@@ -111,185 +125,210 @@ public class PlayerMovement : MonoBehaviour
 		}
 	}
 
-	// ─────────────────────────────────────────
-	// Ground movement
-	// ─────────────────────────────────────────
+	// reads Y positions against waterSurfaceY to classify the three water states
+	private void UpdateWaterState()
+	{
+		float feetY = transform.position.y;
+		float eyeY = transform.position.y + eyeLevelOffset;
+
+		isSwimming = feetY < waterSurfaceY;
+
+		if (isSubmerged)
+			isAtSurface = isSwimming && eyeY >= waterSurfaceY + 1f;
+		else
+			isAtSurface = isSwimming && eyeY >= waterSurfaceY + 0.7f;
+
+		isSubmerged = isSwimming && !isAtSurface;
+
+		isUndergroundGrounded = isSwimming && Physics.CheckSphere(
+			transform.position + Vector3.down * groundOffset, 0.2f, groundMask
+		);
+
+		rb.useGravity = !isSwimming;
+
+		if (!isSwimming)
+		{
+			swimVelocity = Vector3.zero;
+			bobTimer = 0f;
+		}
+	}
+
 	private void HandleGroundMovement()
 	{
 		float speed = isSprinting ? sprintSpeed : walkSpeed;
-
-		Vector3 move = transform.right * moveInput.x
-					 + transform.forward * moveInput.y;
-
+		Vector3 move = transform.right * moveInput.x + transform.forward * moveInput.y;
 		Vector3 targetVelocity = move * speed;
 		targetVelocity.y = rb.linearVelocity.y;
-
 		rb.linearVelocity = targetVelocity;
 	}
 
-	// ─────────────────────────────────────────
-	// Swim movement — omnidirectional with momentum
-	// ─────────────────────────────────────────
-	private void HandleSwim()
+	// slowed walk on underwater terrain, oxygen still drains
+	private void HandleUnderwaterWalking()
 	{
-		// 1. CAMERA-RELATIVE DIRECTION (core Subnautica feel)
+		Vector3 move = transform.right * moveInput.x + transform.forward * moveInput.y;
+		Vector3 targetVelocity = move * underwaterWalkSpeed;
+		targetVelocity.y = rb.linearVelocity.y;
+		rb.linearVelocity = targetVelocity;
+	}
+
+	// locks player to surface Y with a sine bob, horizontal movement only
+	// holding Dive (Ctrl) pushes the player below eye threshold → transitions to submerged
+	private void HandleSurface()
+	{
+		bobTimer += Time.fixedDeltaTime;
+		float bobOffset = Mathf.Sin(bobTimer * bobFrequency * Mathf.PI * 2f) * bobAmplitude;
+		float targetY = (waterSurfaceY - eyeLevelOffset) + bobOffset;
+
 		Vector3 camForward = cameraTransform.forward;
 		Vector3 camRight = cameraTransform.right;
-
-		// flatten camera vectors so looking up/down doesn't break movement
 		camForward.y = 0f;
 		camRight.y = 0f;
 		camForward.Normalize();
 		camRight.Normalize();
 
-		Vector3 moveDir =
-			camRight * moveInput.x +
-			camForward * moveInput.y;
+		Vector3 horizontalMove = camRight * moveInput.x
+							   + camForward * moveInput.y;
 
-		// 2. vertical control (continuous, not impulse)
+		float speed = swimSpeedSurface * surfaceBoostMultiplier;
+		swimVelocity = Vector3.Lerp(swimVelocity, horizontalMove * speed, swimAcceleration * Time.fixedDeltaTime);
+
+		// holding dive pushes player down below eye threshold, switching to submerged next frame
+		if (inputs.Player.Dive.IsPressed())
+			swimVelocity += Vector3.down * verticalSpeed;
+
+		Vector3 newPos = rb.position + swimVelocity * Time.fixedDeltaTime;
+
+		// only snap Y to bob target if not actively diving
+		if (!inputs.Player.Dive.IsPressed())
+			newPos.y = targetY;
+
+		rb.MovePosition(newPos);
+		rb.linearVelocity = Vector3.zero; // MovePosition handles movement, clear velocity to avoid drift
+	}
+
+	// full 3D movement, sink applies unless Space held, camera-relative direction
+	private void HandleSubmerged()
+	{
+		Vector3 moveDir = cameraTransform.forward * moveInput.y
+						+ cameraTransform.right * moveInput.x;
+
 		if (inputs.Player.Jump.IsPressed())
 			moveDir += Vector3.up * verticalSpeed;
-		else if (!isAtSurface)
-			moveDir += Vector3.down * 2.5f; // gentle sink
 
-		// 3. speed tuning
-		float baseSpeed = isAtSurface ? swimSpeedSurface : swimSpeedSubmerged;
+		if (inputs.Player.Dive.IsPressed())
+			moveDir += Vector3.down * verticalSpeed;
 
-		if (isAtSurface)
-			baseSpeed *= surfaceBoostMultiplier;
+		Vector3 targetVelocity = moveDir * swimSpeedSubmerged;
 
-		// 4. target velocity (NO normalization killing analog input)
-		Vector3 targetVelocity = moveDir * baseSpeed;
+		float accel = moveDir.sqrMagnitude > 0.01f ? swimAcceleration : swimDeceleration;
 
-		// 5. SMOOTH ACCELERATION (Subnautica-like inertia)
-		float accel = (moveDir.sqrMagnitude > 0.01f)
-			? swimAcceleration
-			: swimDeceleration;
-
-		swimVelocity = Vector3.Lerp(
-			swimVelocity,
-			targetVelocity,
-			accel * Time.fixedDeltaTime
-		);
-
+		swimVelocity = Vector3.Lerp(swimVelocity, targetVelocity, accel * Time.fixedDeltaTime);
 		swimVelocity = Vector3.ClampMagnitude(swimVelocity, 12f);
 
-		// 6. APPLY DRAG (important for underwater feel)
-		swimVelocity = Vector3.Lerp(
-			swimVelocity,
-			Vector3.zero,
-			swimDrag * Time.fixedDeltaTime * (moveDir.sqrMagnitude < 0.01f ? 1f : 0f)
-		);
+		float oxygenRatio = playerStats.GetOxygenPercent();
+		float currentSink = Mathf.Lerp(sinkForce * 1.5f, sinkForce * 0.3f, oxygenRatio);
+		swimVelocity.y -= currentSink * Time.fixedDeltaTime;
 
-		// 7. APPLY FINAL VELOCITY
 		rb.linearVelocity = swimVelocity;
 	}
 
-	// ─────────────────────────────────────────
-	// Jump
-	// ─────────────────────────────────────────
+	private void HandleOxygen()
+	{
+		if (isSubmerged || isUndergroundGrounded)
+			playerStats.DrainOxygen(isUndergroundGrounded, Time.deltaTime);
+		else
+			playerStats.RegenOxygen(Time.deltaTime);
+	}
+
 	private void OnJump(InputAction.CallbackContext ctx)
 	{
-		if (!isGrounded || isSwimming)
-			return;
+		// surface jump only from underwater ground
+		if (isSwimming)
+		{
+			if (!isUndergroundGrounded) return;
 
-		Vector3 velocity = rb.linearVelocity;
-		velocity.y = 0f;
-		rb.linearVelocity = velocity;
+			rb.linearVelocity = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
+			rb.AddForce(Vector3.up * Mathf.Sqrt(jumpHeight * -2f * gravity), ForceMode.VelocityChange);
+			return;
+		}
+
+		if (!isGrounded) return;
+
+		rb.linearVelocity = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
 
 		ParticleSystem p = Instantiate(jumpParticle, transform.position + Vector3.down * 0.5f, Quaternion.identity);
 		p.Play();
-
 		Destroy(p.gameObject, p.main.duration + p.main.startLifetime.constantMax);
 
-		float jumpVelocity = Mathf.Sqrt(jumpHeight * -2f * gravity);
-
-		rb.AddForce(
-			Vector3.up * jumpVelocity,
-			ForceMode.VelocityChange);
+		rb.AddForce(Vector3.up * Mathf.Sqrt(jumpHeight * -2f * gravity), ForceMode.VelocityChange);
 	}
 
-	// ─────────────────────────────────────────
-	// Attack
-	// ─────────────────────────────────────────
 	private void OnAttack(InputAction.CallbackContext ctx)
 	{
 		if (attackTimer > 0f) return;
-
 		attackTimer = attackCooldown;
 		animator.SetTrigger(HashAttack);
 	}
 
 	private void ApplyGravity()
 	{
-		if (isSwimming)
-			return;
-
-		rb.AddForce(
-			Vector3.up * gravity,
-			ForceMode.Acceleration);
+		rb.AddForce(Vector3.up * gravity, ForceMode.Acceleration);
 	}
 
-	// ─────────────────────────────────────────
-	// Checks
-	// ─────────────────────────────────────────
 	private void CheckGround()
 	{
-		Vector3 spherePos = transform.position + Vector3.down * groundOffset;
-
+		if (isSwimming) { isGrounded = false; return; }
 		isGrounded = Physics.CheckSphere(
-			spherePos,
-			0.2f,
-			groundMask
+			transform.position + Vector3.down * groundOffset, 0.2f, groundMask
 		);
 	}
 
-	private void CheckWater()
-	{
-		bool inWater = Physics.CheckSphere(
-			transform.position + Vector3.up * 0.5f,
-			0.3f,
-			waterMask
-		);
-
-		isAtSurface = inWater && !Physics.CheckSphere(
-			transform.position + Vector3.up * 1.2f,
-			surfaceThreshold,
-			waterMask
-		);
-
-		isSwimming = inWater;
-
-		// reset swim velocity when exiting water
-		if (!isSwimming)
-			swimVelocity = Vector3.zero;
-
-		rb.useGravity = !isSwimming;
-	}
-
-	// ─────────────────────────────────────────
-	// Animator
-	// ─────────────────────────────────────────
 	private void UpdateAnimator()
 	{
 		Vector3 horizontalVel = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
-
 		float speedNormalized = Mathf.Clamp01(horizontalVel.magnitude / sprintSpeed) * 2;
 
-		if (speedNormalized > 1.5f && isGrounded)
+		if (speedNormalized > 1.5f && isGrounded && !isSwimming)
 		{
-			if (!runParticle.isPlaying)
-				runParticle.Play();
+			if (!runParticle.isPlaying) runParticle.Play();
 		}
 		else
 		{
-			if (runParticle.isPlaying)
-				runParticle.Stop();
+			if (runParticle.isPlaying) runParticle.Stop();
 		}
 
 		animator.SetFloat(HashSpeed, speedNormalized, 0.05f, Time.deltaTime);
 		animator.SetBool(HashGrounded, isGrounded);
 		animator.SetBool(HashSwimming, isSwimming);
 		animator.SetBool(HashAtSurface, isAtSurface);
+	}
+
+	private void OnAnimatorMove()
+	{
+		if (isSwimming) return;
+		rb.MovePosition(rb.position + animator.deltaPosition);
+	}
+
+	private void OnDrawGizmos()
+	{
+		if (!Application.isPlaying) return;
+
+		Gizmos.color = isSubmerged ? Color.red : Color.green;
+		Gizmos.DrawWireSphere(new Vector3(transform.position.x, transform.position.y + eyeLevelOffset, transform.position.z), 0.15f);
+
+		Gizmos.color = isSwimming ? Color.blue : Color.gray;
+		Gizmos.DrawWireSphere(transform.position, 0.15f);
+
+		Gizmos.color = Color.cyan;
+		Gizmos.DrawLine(
+			new Vector3(transform.position.x - 2f, waterSurfaceY, transform.position.z),
+			new Vector3(transform.position.x + 2f, waterSurfaceY, transform.position.z)
+		);
+
+		Gizmos.color = isGrounded ? Color.yellow : Color.magenta;
+		Gizmos.DrawWireSphere(transform.position + Vector3.down * groundOffset, 0.2f);
+
+		Gizmos.color = isUndergroundGrounded ? Color.cyan : Color.black;
+		Gizmos.DrawWireSphere(transform.position + Vector3.down * groundOffset, 0.25f);
 	}
 }
