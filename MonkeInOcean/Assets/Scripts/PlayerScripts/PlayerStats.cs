@@ -13,6 +13,23 @@ public class PlayerStats : MonoBehaviour
 	[SerializeField] private float oxygenDrainRateWalking = 2f;
 	[SerializeField] private float oxygenRegenRate = 10f;
 
+	[Header("Life Process")]
+	[SerializeField] private float hunger;
+	[SerializeField] private float thirst;
+	[SerializeField] private float hungerDrainRate = 1f;
+	[SerializeField] private float thirstDrainRate = 1.5f;
+
+	[SerializeField] private bool shouldPee = false;
+	[SerializeField] private bool shouldPoop = false;
+
+	[SerializeField] private float peeThreshold = 80f;
+	[SerializeField] private float poopThreshold = 80f;
+	/// <summary>
+	/// ///Consts for the life process
+	/// </summary>
+	[SerializeField] private float maxHunger = 100f;
+	[SerializeField] private float maxThirst = 100f;
+
 	public float CurrentHealth { get; private set; }
 	public float CurrentOxygen { get; private set; }
 	public bool IsDead { get; private set; }

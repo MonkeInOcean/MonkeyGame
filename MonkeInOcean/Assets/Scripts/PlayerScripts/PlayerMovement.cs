@@ -134,9 +134,9 @@ public class PlayerMovement : MonoBehaviour
 		isSwimming = feetY < waterSurfaceY;
 
 		if (isSubmerged)
-			isAtSurface = isSwimming && eyeY >= waterSurfaceY + 1f;
+			isAtSurface = isSwimming && eyeY >= waterSurfaceY + 5f;
 		else
-			isAtSurface = isSwimming && eyeY >= waterSurfaceY + 0.7f;
+			isAtSurface = isSwimming && eyeY >= waterSurfaceY + 4.5f;
 
 		isSubmerged = isSwimming && !isAtSurface;
 
@@ -151,6 +151,19 @@ public class PlayerMovement : MonoBehaviour
 			swimVelocity = Vector3.zero;
 			bobTimer = 0f;
 		}
+	}
+
+	// add these anywhere in the fields section alongside walkSpeed/sprintSpeed
+	public float WalkSpeed
+	{
+		get => walkSpeed;
+		set => walkSpeed = value;
+	}
+
+	public float SprintSpeed
+	{
+		get => sprintSpeed;
+		set => sprintSpeed = value;
 	}
 
 	private void HandleGroundMovement()
