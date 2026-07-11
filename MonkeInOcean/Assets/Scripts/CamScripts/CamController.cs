@@ -14,10 +14,15 @@ public class CamController : MonoBehaviour
 	[SerializeField] private float minPitch = -80f;
 	[SerializeField] private float maxPitch = 80f;
 
+	[Header("Eye Level")]
+	[SerializeField] private float eyeLevelOffset = 2.2f;
+	[SerializeField] private float swimEyeLevelOffset = 1.5f;
+
 	[Header("References")]
 	[SerializeField] private Transform playerBody;
+	[SerializeField] private Transform camHolder;
 	[SerializeField] private Transform cameraChild;
-	[SerializeField] private Transform headBone;
+	[SerializeField] private PlayerMovement playerMovement;
 
 	private PlayerInputActions inputs;
 
@@ -26,11 +31,7 @@ public class CamController : MonoBehaviour
 	private float currentYaw;
 	private float currentPitch;
 
-	private void Awake()
-	{
-		inputs = new PlayerInputActions();
-	}
-
+	private void Awake() => inputs = new PlayerInputActions();
 	private void OnEnable() => inputs.Player.Enable();
 	private void OnDisable() => inputs.Player.Disable();
 
@@ -51,13 +52,12 @@ public class CamController : MonoBehaviour
 	{
 		ReadInput();
 		ApplyRotation();
-		FollowHead();
+		FollowPlayer();
 	}
 
 	private void ReadInput()
 	{
 		Vector2 look = inputs.Player.Look.ReadValue<Vector2>();
-
 		targetYaw += look.x * sensitivityX;
 		targetPitch -= look.y * sensitivityY;
 		targetPitch = Mathf.Clamp(targetPitch, minPitch, maxPitch);
@@ -65,22 +65,16 @@ public class CamController : MonoBehaviour
 
 	private void ApplyRotation()
 	{
-		// lerp current toward target — no overshoot, consistent ease
 		currentYaw = Mathf.LerpAngle(currentYaw, targetYaw, rotationSmoothSpeed * Time.deltaTime);
 		currentPitch = Mathf.LerpAngle(currentPitch, targetPitch, rotationSmoothSpeed * Time.deltaTime);
 
-		// player body owns yaw — movement and swim direction stay aligned
 		playerBody.rotation = Quaternion.Euler(0f, currentYaw, 0f);
-
-		// camera child owns pitch as local rotation
-		// inherits yaw from Player → CamHolder → Camera hierarchy
 		cameraChild.localRotation = Quaternion.Euler(currentPitch, 0f, 0f);
 	}
 
-	private void FollowHead()
+	private void FollowPlayer()
 	{
-		// snap camera world position to head bone every frame
-		// handles all animation states — walk, swim, surface bob
-		cameraChild.position = headBone.position;
+		float offset = playerMovement.isSwimming ? swimEyeLevelOffset : eyeLevelOffset;
+		camHolder.position = playerBody.position + Vector3.up * offset;
 	}
 }
