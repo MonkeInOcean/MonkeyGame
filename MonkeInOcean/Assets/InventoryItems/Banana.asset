@@ -21,4 +21,4 @@ MonoBehaviour:
   thirstRestore: 15
   bowelIncrease: 10
   bladderIncrease: 10
-  worldPrefab: {fileID: 0}
+  worldPrefab: {fileID: 201184428731935020, guid: 92903c7c336f0e14e856556139974c0f, type: 3}

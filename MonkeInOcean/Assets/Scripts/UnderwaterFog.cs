@@ -18,7 +18,7 @@ public class UnderwaterFog : MonoBehaviour
 	[Header("References")]
 	[SerializeField] private PlayerMovement playerMovement;
 
-	private const float waterSurfaceY = 97f;
+	private const float waterSurfaceY = 95f;
 	private const float maxDepth = 95f; // 95 - 0
 
 	private void Start()

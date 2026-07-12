@@ -8,7 +8,7 @@ public class CamController : MonoBehaviour
 	[SerializeField] private float sensitivityY = 2f;
 
 	[Header("Smoothing")]
-	[SerializeField] private float rotationSmoothSpeed = 20f;
+	[SerializeField] private float rotationSmoothSpeed = 8f;
 
 	[Header("Pitch Clamp")]
 	[SerializeField] private float minPitch = -80f;
@@ -17,11 +17,12 @@ public class CamController : MonoBehaviour
 	[Header("Eye Level")]
 	[SerializeField] private float eyeLevelOffset = 2.2f;
 	[SerializeField] private float swimEyeLevelOffset = 1.5f;
+	[SerializeField] private float swimBackOffset = 1.0f;
 
 	[Header("References")]
 	[SerializeField] private Transform playerBody;
-	[SerializeField] private Transform camHolder;
-	[SerializeField] private Transform cameraChild;
+	[SerializeField] private Rigidbody playerRb;
+	[SerializeField] private Transform cameraTransform; // Main Camera, child of Player
 	[SerializeField] private PlayerMovement playerMovement;
 
 	private PlayerInputActions inputs;
@@ -35,6 +36,8 @@ public class CamController : MonoBehaviour
 	private void OnEnable() => inputs.Player.Enable();
 	private void OnDisable() => inputs.Player.Disable();
 
+	public float CurrentPitch => currentPitch;
+
 	private void Start()
 	{
 		Cursor.lockState = CursorLockMode.Locked;
@@ -45,14 +48,25 @@ public class CamController : MonoBehaviour
 		targetPitch = 0f;
 		currentPitch = 0f;
 
-		transform.localRotation = Quaternion.identity;
+		cameraTransform.localRotation = Quaternion.identity;
+	}
+
+	private void Update()
+	{
+		ReadInput();
+	}
+
+	private void FixedUpdate()
+	{
+		currentYaw = Mathf.LerpAngle(currentYaw, targetYaw, rotationSmoothSpeed * Time.fixedDeltaTime);
+		playerRb.MoveRotation(Quaternion.Euler(0f, currentYaw, 0f));
 	}
 
 	private void LateUpdate()
 	{
-		ReadInput();
-		ApplyRotation();
-		FollowPlayer();
+		currentPitch = Mathf.LerpAngle(currentPitch, targetPitch, rotationSmoothSpeed * Time.deltaTime);
+		cameraTransform.localRotation = Quaternion.Euler(currentPitch, 0f, 0f);
+		UpdateCameraPosition();
 	}
 
 	private void ReadInput()
@@ -63,18 +77,16 @@ public class CamController : MonoBehaviour
 		targetPitch = Mathf.Clamp(targetPitch, minPitch, maxPitch);
 	}
 
-	private void ApplyRotation()
+	private void UpdateCameraPosition()
 	{
-		currentYaw = Mathf.LerpAngle(currentYaw, targetYaw, rotationSmoothSpeed * Time.deltaTime);
-		currentPitch = Mathf.LerpAngle(currentPitch, targetPitch, rotationSmoothSpeed * Time.deltaTime);
+		bool swimming = playerMovement.isSwimming;
+		float heightOffset = swimming ? swimEyeLevelOffset : eyeLevelOffset;
 
-		playerBody.rotation = Quaternion.Euler(0f, currentYaw, 0f);
-		cameraChild.localRotation = Quaternion.Euler(currentPitch, 0f, 0f);
-	}
+		Vector3 localPos = Vector3.up * heightOffset + Vector3.forward * 1f;
 
-	private void FollowPlayer()
-	{
-		float offset = playerMovement.isSwimming ? swimEyeLevelOffset : eyeLevelOffset;
-		camHolder.position = playerBody.position + Vector3.up * offset;
+		if (swimming)
+			localPos -= (Vector3.forward * swimBackOffset + Vector3.up * 2f);
+
+		cameraTransform.localPosition = localPos;
 	}
 }

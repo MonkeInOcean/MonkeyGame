@@ -44,8 +44,12 @@ public class PlayerMovement : MonoBehaviour
 	[SerializeField] private ParticleSystem runParticle;
 	[SerializeField] private ParticleSystem jumpParticle;
 
-	[Header("Look")]
-	[SerializeField] private float sensitivityX = 0.15f;
+	[Header("Swim Dive Control")]
+	[SerializeField] private CamController camController;
+	[SerializeField] private float lookDownDiveAngle = 35f;
+	[SerializeField] private float surfaceSettleSpeed = 6f;
+
+	private bool wasSwimmingPrev;
 
 	private Rigidbody rb;
 	private PlayerInputActions inputs;
@@ -91,12 +95,10 @@ public class PlayerMovement : MonoBehaviour
 		inputs.Player.Disable();
 	}
 
+	// mouse-look rotation now lives entirely in CamController
 	private void Update()
 	{
 		moveInput = inputs.Player.Move.ReadValue<Vector2>();
-
-		float mouseX = inputs.Player.Look.ReadValue<Vector2>().x;
-		transform.Rotate(Vector3.up * mouseX * sensitivityX);
 
 		isSprinting = inputs.Player.Sprint.IsPressed();
 		attackTimer -= Time.deltaTime;
@@ -125,7 +127,6 @@ public class PlayerMovement : MonoBehaviour
 		}
 	}
 
-	// reads Y positions against waterSurfaceY to classify the three water states
 	private void UpdateWaterState()
 	{
 		float feetY = transform.position.y;
@@ -133,10 +134,22 @@ public class PlayerMovement : MonoBehaviour
 
 		isSwimming = feetY < waterSurfaceY;
 
-		if (isSubmerged)
-			isAtSurface = isSwimming && eyeY >= waterSurfaceY + 5f;
+		// preserve fall speed instead of discarding it the instant we enter water
+		if (isSwimming && !wasSwimmingPrev)
+			swimVelocity = rb.linearVelocity;
+
+		bool geoAtSurface = isSubmerged
+			? eyeY >= waterSurfaceY + 5f
+			: eyeY >= waterSurfaceY + 4.5f;
+
+		bool wantsToDive = inputs.Player.Dive.IsPressed()
+			|| (camController.CurrentPitch > lookDownDiveAngle && moveInput.y > 0.1f);
+
+		// while already calmly floating, only leave surface on explicit intent; a fresh fall ignores the gate
+		if (isSwimming && isAtSurface && wasSwimmingPrev && !wantsToDive)
+			isAtSurface = true;
 		else
-			isAtSurface = isSwimming && eyeY >= waterSurfaceY + 4.5f;
+			isAtSurface = isSwimming && geoAtSurface;
 
 		isSubmerged = isSwimming && !isAtSurface;
 
@@ -151,9 +164,10 @@ public class PlayerMovement : MonoBehaviour
 			swimVelocity = Vector3.zero;
 			bobTimer = 0f;
 		}
+
+		wasSwimmingPrev = isSwimming;
 	}
 
-	// add these anywhere in the fields section alongside walkSpeed/sprintSpeed
 	public float WalkSpeed
 	{
 		get => walkSpeed;
@@ -175,7 +189,6 @@ public class PlayerMovement : MonoBehaviour
 		rb.linearVelocity = targetVelocity;
 	}
 
-	// slowed walk on underwater terrain, oxygen still drains
 	private void HandleUnderwaterWalking()
 	{
 		Vector3 move = transform.right * moveInput.x + transform.forward * moveInput.y;
@@ -184,8 +197,6 @@ public class PlayerMovement : MonoBehaviour
 		rb.linearVelocity = targetVelocity;
 	}
 
-	// locks player to surface Y with a sine bob, horizontal movement only
-	// holding Dive (Ctrl) pushes the player below eye threshold → transitions to submerged
 	private void HandleSurface()
 	{
 		bobTimer += Time.fixedDeltaTime;
@@ -199,31 +210,21 @@ public class PlayerMovement : MonoBehaviour
 		camForward.Normalize();
 		camRight.Normalize();
 
-		Vector3 horizontalMove = camRight * moveInput.x
-							   + camForward * moveInput.y;
+		Vector3 horizontalMove = camRight * moveInput.x + camForward * moveInput.y;
 
 		float speed = swimSpeedSurface * surfaceBoostMultiplier;
 		swimVelocity = Vector3.Lerp(swimVelocity, horizontalMove * speed, swimAcceleration * Time.fixedDeltaTime);
 
-		// holding dive pushes player down below eye threshold, switching to submerged next frame
-		if (inputs.Player.Dive.IsPressed())
-			swimVelocity += Vector3.down * verticalSpeed;
-
-		Vector3 newPos = rb.position + swimVelocity * Time.fixedDeltaTime;
-
-		// only snap Y to bob target if not actively diving
-		if (!inputs.Player.Dive.IsPressed())
-			newPos.y = targetY;
+		Vector3 newPos = rb.position + new Vector3(swimVelocity.x, 0f, swimVelocity.z) * Time.fixedDeltaTime;
+		newPos.y = Mathf.MoveTowards(rb.position.y, targetY, surfaceSettleSpeed * Time.fixedDeltaTime);
 
 		rb.MovePosition(newPos);
-		rb.linearVelocity = Vector3.zero; // MovePosition handles movement, clear velocity to avoid drift
+		rb.linearVelocity = Vector3.zero;
 	}
 
-	// full 3D movement, sink applies unless Space held, camera-relative direction
 	private void HandleSubmerged()
 	{
-		Vector3 moveDir = cameraTransform.forward * moveInput.y
-						+ cameraTransform.right * moveInput.x;
+		Vector3 moveDir = cameraTransform.forward * moveInput.y + cameraTransform.right * moveInput.x;
 
 		if (inputs.Player.Jump.IsPressed())
 			moveDir += Vector3.up * verticalSpeed;
@@ -255,7 +256,6 @@ public class PlayerMovement : MonoBehaviour
 
 	private void OnJump(InputAction.CallbackContext ctx)
 	{
-		// surface jump only from underwater ground
 		if (isSwimming)
 		{
 			if (!isUndergroundGrounded) return;
@@ -314,12 +314,6 @@ public class PlayerMovement : MonoBehaviour
 		animator.SetBool(HashGrounded, isGrounded);
 		animator.SetBool(HashSwimming, isSwimming);
 		animator.SetBool(HashAtSurface, isAtSurface);
-	}
-
-	private void OnAnimatorMove()
-	{
-		if (isSwimming) return;
-		rb.MovePosition(rb.position + animator.deltaPosition);
 	}
 
 	private void OnDrawGizmos()
