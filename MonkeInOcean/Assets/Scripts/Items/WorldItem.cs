@@ -11,5 +11,11 @@ public class WorldItem : MonoBehaviour
 		// ensure collider is not a trigger so raycast hits it
 		Collider col = GetComponent<Collider>();
 		col.isTrigger = false;
+
+		// every collectable gets the black outline highlight
+		if (!TryGetComponent(out ItemOutline outline))
+			outline = gameObject.AddComponent<ItemOutline>();
+
+		outline.ApplyOutline();
 	}
 }

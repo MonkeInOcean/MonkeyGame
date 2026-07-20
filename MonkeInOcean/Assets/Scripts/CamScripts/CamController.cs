@@ -9,6 +9,7 @@ public class CamController : MonoBehaviour
 
 	[Header("Smoothing")]
 	[SerializeField] private float rotationSmoothSpeed = 8f;
+	[SerializeField] private float offsetSmoothSpeed = 5f;
 
 	[Header("Pitch Clamp")]
 	[SerializeField] private float minPitch = -80f;
@@ -31,6 +32,7 @@ public class CamController : MonoBehaviour
 	private float targetPitch;
 	private float currentYaw;
 	private float currentPitch;
+	private Vector3 currentOffset;
 
 	private void Awake() => inputs = new PlayerInputActions();
 	private void OnEnable() => inputs.Player.Enable();
@@ -48,7 +50,7 @@ public class CamController : MonoBehaviour
 		targetPitch = 0f;
 		currentPitch = 0f;
 
-		cameraTransform.localRotation = Quaternion.identity;
+		currentOffset = ComputeTargetOffset();
 	}
 
 	private void Update()
@@ -58,35 +60,51 @@ public class CamController : MonoBehaviour
 
 	private void FixedUpdate()
 	{
-		currentYaw = Mathf.LerpAngle(currentYaw, targetYaw, rotationSmoothSpeed * Time.fixedDeltaTime);
+		// Rigidbody just tracks the already-smoothed yaw so movement stays view-relative.
 		playerRb.MoveRotation(Quaternion.Euler(0f, currentYaw, 0f));
 	}
 
 	private void LateUpdate()
 	{
-		currentPitch = Mathf.LerpAngle(currentPitch, targetPitch, rotationSmoothSpeed * Time.deltaTime);
-		cameraTransform.localRotation = Quaternion.Euler(currentPitch, 0f, 0f);
+		float t = 1f - Mathf.Exp(-rotationSmoothSpeed * Time.deltaTime);
+		currentYaw = Mathf.LerpAngle(currentYaw, targetYaw, t);
+		currentPitch = Mathf.LerpAngle(currentPitch, targetPitch, t);
+
 		UpdateCameraPosition();
+
+		// World-space rotation: camera no longer depends on the physics-stepped parent yaw.
+		cameraTransform.rotation = Quaternion.Euler(currentPitch, currentYaw, 0f);
 	}
 
 	private void ReadInput()
 	{
+		if (InventoryController.GameplayBlocked) return;
+
 		Vector2 look = inputs.Player.Look.ReadValue<Vector2>();
 		targetYaw += look.x * sensitivityX;
 		targetPitch -= look.y * sensitivityY;
 		targetPitch = Mathf.Clamp(targetPitch, minPitch, maxPitch);
 	}
 
-	private void UpdateCameraPosition()
+	private Vector3 ComputeTargetOffset()
 	{
 		bool swimming = playerMovement.isSwimming;
 		float heightOffset = swimming ? swimEyeLevelOffset : eyeLevelOffset;
 
-		Vector3 localPos = Vector3.up * heightOffset + Vector3.forward * 1f;
+		Vector3 offset = Vector3.up * heightOffset + Vector3.forward * 1f;
 
 		if (swimming)
-			localPos -= (Vector3.forward * swimBackOffset + Vector3.up * 2f);
+			offset -= (Vector3.forward * swimBackOffset + Vector3.up * 2f);
 
-		cameraTransform.localPosition = localPos;
+		return offset;
+	}
+
+	private void UpdateCameraPosition()
+	{
+		float t = 1f - Mathf.Exp(-offsetSmoothSpeed * Time.deltaTime);
+		currentOffset = Vector3.Lerp(currentOffset, ComputeTargetOffset(), t);
+
+		// Offset follows the smoothed camera yaw, not the physics yaw of the player root.
+		cameraTransform.position = playerBody.position + Quaternion.Euler(0f, currentYaw, 0f) * currentOffset;
 	}
 }

@@ -4,17 +4,33 @@ using TMPro;
 
 public class InventoryUI : MonoBehaviour
 {
+	[Header("References")]
 	[SerializeField] private Inventory inventory;
+	[SerializeField] private GameObject panelRoot; // whole inventory panel, toggled with Tab
 	[SerializeField] private Transform slotParent;
 	[SerializeField] private GameObject slotPrefab; // prefab with Image (icon) + TextMeshProUGUI (quantity)
 
-	private GameObject[] slotUIs;
+	[Header("Selection")]
+	[SerializeField] private Color normalSlotColor = new Color(1f, 1f, 1f, 0.4f);
+	[SerializeField] private Color selectedSlotColor = new Color(1f, 0.85f, 0.3f, 0.9f);
+
+	public bool IsOpen { get; private set; }
+	public int SelectedSlotIndex { get; private set; } = -1;
+
+	// cached per-slot UI pieces so RefreshUI never does transform.Find
+	private Image[] icons;
+	private TextMeshProUGUI[] quantityTexts;
+	private Image[] backgrounds;
 
 	private void Start()
 	{
 		BuildSlots();
 		inventory.OnInventoryChanged += RefreshUI;
 		RefreshUI();
+
+		if (panelRoot != null)
+			panelRoot.SetActive(false);
+		IsOpen = false;
 	}
 
 	private void OnDestroy()
@@ -23,13 +39,57 @@ public class InventoryUI : MonoBehaviour
 			inventory.OnInventoryChanged -= RefreshUI;
 	}
 
+	public void Toggle()
+	{
+		IsOpen = !IsOpen;
+
+		if (panelRoot != null)
+			panelRoot.SetActive(IsOpen);
+
+		if (!IsOpen)
+			SetSelectedSlot(-1);
+	}
+
 	private void BuildSlots()
 	{
-		slotUIs = new GameObject[inventory.Slots.Length];
+		int count = inventory.Slots.Length;
+		icons = new Image[count];
+		quantityTexts = new TextMeshProUGUI[count];
+		backgrounds = new Image[count];
 
-		for (int i = 0; i < inventory.Slots.Length; i++)
+		for (int i = 0; i < count; i++)
 		{
-			slotUIs[i] = Instantiate(slotPrefab, slotParent);
+			GameObject slotUI = Instantiate(slotPrefab, slotParent);
+
+			icons[i] = slotUI.transform.Find("Icon")?.GetComponent<Image>();
+			quantityTexts[i] = slotUI.transform.Find("Quantity")?.GetComponent<TextMeshProUGUI>();
+			backgrounds[i] = slotUI.GetComponent<Image>();
+
+			// click-to-select: reuse existing Button or add one on the slot root
+			if (!slotUI.TryGetComponent(out Button button))
+				button = slotUI.AddComponent<Button>();
+
+			int index = i;
+			button.onClick.AddListener(() => SetSelectedSlot(index));
+		}
+	}
+
+	private void SetSelectedSlot(int index)
+	{
+		// clicking an empty slot or the selected slot again deselects
+		if (index >= 0 && (inventory.GetSlot(index).IsEmpty || index == SelectedSlotIndex))
+			index = -1;
+
+		SelectedSlotIndex = index;
+		RefreshSelectionHighlight();
+	}
+
+	private void RefreshSelectionHighlight()
+	{
+		for (int i = 0; i < backgrounds.Length; i++)
+		{
+			if (backgrounds[i] == null) continue;
+			backgrounds[i].color = i == SelectedSlotIndex ? selectedSlotColor : normalSlotColor;
 		}
 	}
 
@@ -38,27 +98,29 @@ public class InventoryUI : MonoBehaviour
 		for (int i = 0; i < inventory.Slots.Length; i++)
 		{
 			InventorySlot slot = inventory.GetSlot(i);
-			GameObject slotUI = slotUIs[i];
-
-			Image icon = slotUI.transform.Find("Icon")?.GetComponent<Image>();
-			TextMeshProUGUI quantityText = slotUI.transform.Find("Quantity")?.GetComponent<TextMeshProUGUI>();
 
 			if (slot.IsEmpty)
 			{
-				if (icon != null) icon.enabled = false;
-				if (quantityText != null) quantityText.text = "";
+				if (icons[i] != null) icons[i].enabled = false;
+				if (quantityTexts[i] != null) quantityTexts[i].text = "";
 			}
 			else
 			{
-				if (icon != null)
+				if (icons[i] != null)
 				{
-					icon.enabled = true;
-					icon.sprite = slot.item.icon;
+					icons[i].enabled = true;
+					icons[i].sprite = slot.item.icon;
 				}
 
-				if (quantityText != null)
-					quantityText.text = slot.quantity > 1 ? slot.quantity.ToString() : "";
+				if (quantityTexts[i] != null)
+					quantityTexts[i].text = slot.quantity.ToString();
 			}
 		}
+
+		// drop selection if the selected slot became empty
+		if (SelectedSlotIndex >= 0 && inventory.GetSlot(SelectedSlotIndex).IsEmpty)
+			SelectedSlotIndex = -1;
+
+		RefreshSelectionHighlight();
 	}
 }

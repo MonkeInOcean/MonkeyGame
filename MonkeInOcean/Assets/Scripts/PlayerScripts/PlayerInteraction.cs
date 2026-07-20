@@ -38,6 +38,13 @@ public class PlayerInteraction : MonoBehaviour
 
 	private void Update()
 	{
+		if (InventoryController.GameplayBlocked)
+		{
+			currentTarget = null;
+			HidePrompt();
+			return;
+		}
+
 		CheckForItem();
 	}
 
@@ -69,9 +76,12 @@ public class PlayerInteraction : MonoBehaviour
 	// ─────────────────────────────────────────
 	private void OnInteractPressed(InputAction.CallbackContext ctx)
 	{
+		if (InventoryController.GameplayBlocked) return;
 		if (currentTarget == null) return;
 
 		bool added = inventory.AddItem(currentTarget.item, currentTarget.quantity);
+
+		print($"Added {currentTarget.item.itemName} to inventory: {added}");
 
 		if (added)
 		{

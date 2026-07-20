@@ -32,6 +32,12 @@ public class PlayerMovement : MonoBehaviour
 	[SerializeField] private float groundOffset = 0.1f;
 	[SerializeField] private LayerMask groundMask;
 
+	[Header("Stamina")]
+	[SerializeField] private float maxStamina = 100f;
+	[SerializeField] private float staminaDrainRate = 20f;       // per second while sprinting
+	[SerializeField] private float staminaRegenRate = 12f;       // per second when not sprinting
+	[SerializeField] private float sprintRecoverThreshold = 20f; // must reach this % before sprint re-enables
+
 	[Header("Attack")]
 	[SerializeField] private float attackCooldown = 0.6f;
 
@@ -63,6 +69,11 @@ public class PlayerMovement : MonoBehaviour
 	public bool isAtSurface;
 	public bool isSubmerged;
 
+	public float CurrentStamina { get; private set; }
+	public float GetStaminaPercent() => CurrentStamina / maxStamina;
+	public event System.Action<float> OnStaminaChanged;
+	private bool staminaExhausted;
+
 	private float attackTimer;
 	private Vector3 swimVelocity;
 	private float bobTimer;
@@ -79,6 +90,7 @@ public class PlayerMovement : MonoBehaviour
 		rb.useGravity = false;
 		inputs = new PlayerInputActions();
 		runParticle.Stop();
+		CurrentStamina = maxStamina;
 	}
 
 	private void OnEnable()
@@ -98,9 +110,12 @@ public class PlayerMovement : MonoBehaviour
 	// mouse-look rotation now lives entirely in CamController
 	private void Update()
 	{
-		moveInput = inputs.Player.Move.ReadValue<Vector2>();
+		bool blocked = InventoryController.GameplayBlocked;
 
-		isSprinting = inputs.Player.Sprint.IsPressed();
+		moveInput = blocked ? Vector2.zero : inputs.Player.Move.ReadValue<Vector2>();
+		bool wantSprint = !blocked && inputs.Player.Sprint.IsPressed() && moveInput.sqrMagnitude > 0.01f;
+		isSprinting = wantSprint && !staminaExhausted && CurrentStamina > 0f;
+		UpdateStamina();
 		attackTimer -= Time.deltaTime;
 
 		UpdateWaterState();
@@ -167,6 +182,8 @@ public class PlayerMovement : MonoBehaviour
 
 		wasSwimmingPrev = isSwimming;
 	}
+
+	public bool IsSprinting => isSprinting && moveInput.sqrMagnitude > 0.01f;
 
 	public float WalkSpeed
 	{
@@ -246,6 +263,19 @@ public class PlayerMovement : MonoBehaviour
 		rb.linearVelocity = swimVelocity;
 	}
 
+	private void UpdateStamina()
+	{
+		if (isSprinting)
+			CurrentStamina = Mathf.Max(0f, CurrentStamina - staminaDrainRate * Time.deltaTime);
+		else
+			CurrentStamina = Mathf.Min(maxStamina, CurrentStamina + staminaRegenRate * Time.deltaTime);
+
+		if (CurrentStamina <= 0f) staminaExhausted = true;
+		else if (CurrentStamina >= sprintRecoverThreshold) staminaExhausted = false;
+
+		OnStaminaChanged?.Invoke(GetStaminaPercent());
+	}
+
 	private void HandleOxygen()
 	{
 		if (isSubmerged || isUndergroundGrounded)
@@ -256,6 +286,8 @@ public class PlayerMovement : MonoBehaviour
 
 	private void OnJump(InputAction.CallbackContext ctx)
 	{
+		if (InventoryController.GameplayBlocked) return;
+
 		if (isSwimming)
 		{
 			if (!isUndergroundGrounded) return;
@@ -278,6 +310,7 @@ public class PlayerMovement : MonoBehaviour
 
 	private void OnAttack(InputAction.CallbackContext ctx)
 	{
+		if (InventoryController.GameplayBlocked) return;
 		if (attackTimer > 0f) return;
 		attackTimer = attackCooldown;
 		animator.SetTrigger(HashAttack);

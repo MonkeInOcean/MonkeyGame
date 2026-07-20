@@ -22,6 +22,7 @@ public class Inventory : MonoBehaviour
 	// ─────────────────────────────────────────
 	public bool AddItem(ItemData item, int quantity = 1)
 	{
+		print($"Adding {item.itemName} to inventory: {quantity}");
 		// try stacking onto existing slots first
 		for (int i = 0; i < Slots.Length; i++)
 		{
@@ -58,6 +59,8 @@ public class Inventory : MonoBehaviour
 					return true;
 				}
 			}
+
+			print($"Added {item.itemName} to slot {i}");
 		}
 
 		OnInventoryChanged?.Invoke();
@@ -82,11 +85,12 @@ public class Inventory : MonoBehaviour
 
 	// ─────────────────────────────────────────
 	// Use item from slot — for Food/Drink, calls LifeProcess
+	// Returns true if the item was consumed
 	// ─────────────────────────────────────────
-	public void UseItem(int slotIndex, LifeProcess lifeProcess)
+	public bool UseItem(int slotIndex, LifeProcess lifeProcess)
 	{
-		if (slotIndex < 0 || slotIndex >= Slots.Length) return;
-		if (Slots[slotIndex].IsEmpty) return;
+		if (slotIndex < 0 || slotIndex >= Slots.Length) return false;
+		if (Slots[slotIndex].IsEmpty) return false;
 
 		ItemData item = Slots[slotIndex].item;
 
@@ -95,17 +99,44 @@ public class Inventory : MonoBehaviour
 			case ItemType.Food:
 				lifeProcess.Eat(item.hungerRestore, item.bowelIncrease);
 				RemoveFromSlot(slotIndex, 1);
-				break;
+				return true;
 
 			case ItemType.Drink:
 				lifeProcess.Drink(item.thirstRestore, item.bladderIncrease);
 				RemoveFromSlot(slotIndex, 1);
-				break;
+				return true;
 
-			case ItemType.General:
-				// TODO: handle general item use later
-				break;
+			default:
+				// General items are not usable yet
+				return false;
 		}
+	}
+
+	// ─────────────────────────────────────────
+	// Drop one item from a slot into the world
+	// Returns true if an item was dropped
+	// ─────────────────────────────────────────
+	public bool DropItem(int slotIndex, Transform dropOrigin)
+	{
+		if (slotIndex < 0 || slotIndex >= Slots.Length) return false;
+		if (Slots[slotIndex].IsEmpty) return false;
+
+		ItemData item = Slots[slotIndex].item;
+
+		if (item.worldPrefab == null)
+		{
+			Debug.LogWarning($"[Inventory] '{item.itemName}' has no worldPrefab assigned, cannot drop.");
+			return false;
+		}
+
+		Vector3 spawnPos = dropOrigin.position + dropOrigin.forward * 1.5f;
+		GameObject dropped = Instantiate(item.worldPrefab, spawnPos, Quaternion.identity);
+
+		if (dropped.TryGetComponent(out Rigidbody droppedRb))
+			droppedRb.AddForce(dropOrigin.forward * 2.5f, ForceMode.VelocityChange);
+
+		RemoveFromSlot(slotIndex, 1);
+		return true;
 	}
 
 	public InventorySlot GetSlot(int index) => Slots[index];

@@ -43,8 +43,6 @@ public class UnderwaterFog : MonoBehaviour
 		float depth = Mathf.Clamp(waterSurfaceY - playerMovement.transform.position.y, 0f, maxDepth);
 		float depthRatio = depth / maxDepth;
 
-		print($"Depth: {depth}, Depth Ratio: {depthRatio}");
-
 		Color targetColor = Color.Lerp(shallowFogColor, deepFogColor, depthRatio);
 		float targetDensity = Mathf.Lerp(shallowFogDensity, deepFogDensity, depthRatio);
 

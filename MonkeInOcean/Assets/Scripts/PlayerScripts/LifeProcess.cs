@@ -9,15 +9,20 @@ public class LifeProcess : MonoBehaviour
 
 	[Header("Hunger")]
 	[SerializeField] private float maxHunger = 100f;
-	[SerializeField] private float hungerDrainRate = 1f;
+	[SerializeField] private float hungerDrainRate = 0.2f;
 	[SerializeField] private float hungerHealthDrain = 2f;   // health drain per second when starving
 
 	[Header("Thirst")]
 	[SerializeField] private float maxThirst = 100f;
-	[SerializeField] private float thirstDrainRate = 1.5f;
+	[SerializeField] private float thirstDrainRate = 0.35f;
 	[SerializeField] private float thirstHealthDrain = 3f;   // health drain per second when dehydrated
 
+	[Header("Exertion")]
+	[SerializeField] private float sprintDrainMultiplier = 2f; // hunger/thirst drain faster while running
+
 	[Header("Pee & Poop")]
+	[SerializeField] private float bladderFillRate = 0.4f;   // passive bladder fill per second
+	[SerializeField] private float bowelFillRate = 0.15f;    // passive bowel fill per second
 	[SerializeField] private float peeThreshold = 80f;  // how full bladder before needing pee
 	[SerializeField] private float poopThreshold = 80f;
 	[SerializeField] private float peeIgnoreDuration = 60f;  // seconds before slowness kicks in
@@ -39,6 +44,9 @@ public class LifeProcess : MonoBehaviour
 	// ── flags UI reads ────────────────────────────────────────────
 	public bool ShouldPee { get; private set; }
 	public bool ShouldPoop { get; private set; }
+
+	// true while any need is being ignored long enough to slow the player
+	public bool IsSlowed => peeSlownessActive || poopSlownessActive;
 
 	// ── ignore timers ─────────────────────────────────────────────
 	private float peeIgnoreTimer;
@@ -93,8 +101,11 @@ public class LifeProcess : MonoBehaviour
 	{
 		if (playerStats.IsDead) return;
 
+		// running burns through hunger/thirst faster
+		float exertion = (playerMovement != null && playerMovement.IsSprinting) ? sprintDrainMultiplier : 1f;
+
 		// hunger
-		CurrentHunger = Mathf.Max(0f, CurrentHunger - hungerDrainRate * Time.deltaTime);
+		CurrentHunger = Mathf.Max(0f, CurrentHunger - hungerDrainRate * exertion * Time.deltaTime);
 		OnHungerChanged?.Invoke(GetHungerPercent());
 
 		if (CurrentHunger <= 0f)
@@ -104,7 +115,7 @@ public class LifeProcess : MonoBehaviour
 		}
 
 		// thirst
-		CurrentThirst = Mathf.Max(0f, CurrentThirst - thirstDrainRate * Time.deltaTime);
+		CurrentThirst = Mathf.Max(0f, CurrentThirst - thirstDrainRate * exertion * Time.deltaTime);
 		OnThirstChanged?.Invoke(GetThirstPercent());
 
 		if (CurrentThirst <= 0f)
@@ -119,13 +130,12 @@ public class LifeProcess : MonoBehaviour
 	// ─────────────────────────────────────────
 	private void UpdateBladderAndBowel()
 	{
-		// bladder fills as thirst depletes (you drank, now it processes)
-		float drankAmount = (maxThirst - CurrentThirst) / maxThirst;
-		BladderLevel = Mathf.Min(100f, drankAmount * 100f);
+		if (playerStats.IsDead) return;
 
-		// bowel fills as hunger depletes
-		float ateAmount = (maxHunger - CurrentHunger) / maxHunger;
-		BowelLevel = Mathf.Min(100f, ateAmount * 100f);
+		// independent accumulators: fill passively over time, reset by Pee()/Poop(),
+		// topped up by Drink()/Eat()
+		BladderLevel = Mathf.Min(100f, BladderLevel + bladderFillRate * Time.deltaTime);
+		BowelLevel = Mathf.Min(100f, BowelLevel + bowelFillRate * Time.deltaTime);
 
 		bool newShouldPee = BladderLevel >= peeThreshold;
 		bool newShouldPoop = BowelLevel >= poopThreshold;
@@ -180,14 +190,14 @@ public class LifeProcess : MonoBehaviour
 	// ─────────────────────────────────────────
 	// Food and drink — call these from item interaction later
 	// ─────────────────────────────────────────
-	public void Eat(float hungerRestore, float bowelIncrease = 10f)
+	public void Eat(float hungerRestore, float bowelIncrease = 8f)
 	{
 		CurrentHunger = Mathf.Min(maxHunger, CurrentHunger + hungerRestore);
 		BowelLevel = Mathf.Min(100f, BowelLevel + bowelIncrease);
 		OnHungerChanged?.Invoke(GetHungerPercent());
 	}
 
-	public void Drink(float thirstRestore, float bladderIncrease = 10f)
+	public void Drink(float thirstRestore, float bladderIncrease = 8f)
 	{
 		CurrentThirst = Mathf.Min(maxThirst, CurrentThirst + thirstRestore);
 		BladderLevel = Mathf.Min(100f, BladderLevel + bladderIncrease);
