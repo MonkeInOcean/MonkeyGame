@@ -45,6 +45,7 @@ public class PlayerMovement : MonoBehaviour
 	[SerializeField] private Animator animator;
 	[SerializeField] private Transform cameraTransform;
 	[SerializeField] private PlayerStats playerStats;
+	[SerializeField] private LifeProcess lifeProcess;
 
 	[Header("Particles")]
 	[SerializeField] private ParticleSystem runParticle;
@@ -88,6 +89,7 @@ public class PlayerMovement : MonoBehaviour
 	{
 		rb = GetComponent<Rigidbody>();
 		rb.useGravity = false;
+		if (lifeProcess == null) lifeProcess = GetComponent<LifeProcess>();
 		inputs = new PlayerInputActions();
 		runParticle.Stop();
 		CurrentStamina = maxStamina;
@@ -110,7 +112,8 @@ public class PlayerMovement : MonoBehaviour
 	// mouse-look rotation now lives entirely in CamController
 	private void Update()
 	{
-		bool blocked = InventoryController.GameplayBlocked;
+		bool blocked = InventoryController.GameplayBlocked
+			|| (lifeProcess != null && lifeProcess.IsPooping);
 
 		moveInput = blocked ? Vector2.zero : inputs.Player.Move.ReadValue<Vector2>();
 		bool wantSprint = !blocked && inputs.Player.Sprint.IsPressed() && moveInput.sqrMagnitude > 0.01f;
@@ -287,6 +290,7 @@ public class PlayerMovement : MonoBehaviour
 	private void OnJump(InputAction.CallbackContext ctx)
 	{
 		if (InventoryController.GameplayBlocked) return;
+		if (lifeProcess != null && lifeProcess.IsPooping) return;
 
 		if (isSwimming)
 		{
@@ -311,6 +315,7 @@ public class PlayerMovement : MonoBehaviour
 	private void OnAttack(InputAction.CallbackContext ctx)
 	{
 		if (InventoryController.GameplayBlocked) return;
+		if (lifeProcess != null && lifeProcess.IsPooping) return;
 		if (attackTimer > 0f) return;
 		attackTimer = attackCooldown;
 		animator.SetTrigger(HashAttack);

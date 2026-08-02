@@ -26,6 +26,9 @@ public class InventoryController : MonoBehaviour
 		inputs.Player.ToggleInventory.performed += OnToggleInventory;
 		inputs.Player.UseItem.performed += OnUseItem;
 		inputs.Player.DropItem.performed += OnDropItem;
+
+		inventoryUI.OnSlotUseRequested += OnSlotUseRequested;
+		inventoryUI.OnSlotDropRequested += OnSlotDropRequested;
 	}
 
 	private void OnDisable()
@@ -35,7 +38,25 @@ public class InventoryController : MonoBehaviour
 		inputs.Player.DropItem.performed -= OnDropItem;
 		inputs.Player.Disable();
 
+		if (inventoryUI != null)
+		{
+			inventoryUI.OnSlotUseRequested -= OnSlotUseRequested;
+			inventoryUI.OnSlotDropRequested -= OnSlotDropRequested;
+		}
+
 		SetBlocked(false);
+	}
+
+	// double-click a slot to consume it
+	private void OnSlotUseRequested(int slotIndex)
+	{
+		inventory.UseItem(slotIndex, lifeProcess);
+	}
+
+	// right-click a slot to drop it
+	private void OnSlotDropRequested(int slotIndex)
+	{
+		inventory.DropItem(slotIndex, cameraTransform);
 	}
 
 	private void OnToggleInventory(InputAction.CallbackContext ctx)

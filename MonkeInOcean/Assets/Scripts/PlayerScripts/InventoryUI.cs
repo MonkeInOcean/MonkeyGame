@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -16,6 +17,10 @@ public class InventoryUI : MonoBehaviour
 
 	public bool IsOpen { get; private set; }
 	public int SelectedSlotIndex { get; private set; } = -1;
+
+	// raised when a slot is double-clicked (use) or right-clicked (drop)
+	public event Action<int> OnSlotUseRequested;
+	public event Action<int> OnSlotDropRequested;
 
 	// cached per-slot UI pieces so RefreshUI never does transform.Find
 	private Image[] icons;
@@ -65,12 +70,15 @@ public class InventoryUI : MonoBehaviour
 			quantityTexts[i] = slotUI.transform.Find("Quantity")?.GetComponent<TextMeshProUGUI>();
 			backgrounds[i] = slotUI.GetComponent<Image>();
 
-			// click-to-select: reuse existing Button or add one on the slot root
-			if (!slotUI.TryGetComponent(out Button button))
-				button = slotUI.AddComponent<Button>();
+			// pointer handling: left single = select, left double = use, right = drop
+			if (!slotUI.TryGetComponent(out InventorySlotButton slotButton))
+				slotButton = slotUI.AddComponent<InventorySlotButton>();
 
 			int index = i;
-			button.onClick.AddListener(() => SetSelectedSlot(index));
+			slotButton.index = index;
+			slotButton.onSelect = SetSelectedSlot;
+			slotButton.onUse = idx => OnSlotUseRequested?.Invoke(idx);
+			slotButton.onDrop = idx => OnSlotDropRequested?.Invoke(idx);
 		}
 	}
 

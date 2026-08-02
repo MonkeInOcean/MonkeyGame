@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class LifeProcess : MonoBehaviour
 {
@@ -23,12 +24,22 @@ public class LifeProcess : MonoBehaviour
 	[Header("Pee & Poop")]
 	[SerializeField] private float bladderFillRate = 0.4f;   // passive bladder fill per second
 	[SerializeField] private float bowelFillRate = 0.15f;    // passive bowel fill per second
-	[SerializeField] private float peeThreshold = 80f;  // how full bladder before needing pee
-	[SerializeField] private float poopThreshold = 80f;
+	[SerializeField] private float peeThreshold = 60f;  // how full bladder before needing pee
+	[SerializeField] private float poopThreshold = 60f;
 	[SerializeField] private float peeIgnoreDuration = 60f;  // seconds before slowness kicks in
 	[SerializeField] private float poopIgnoreDuration = 90f;
 	[SerializeField] private float peeSpeedPenalty = 0.6f; // multiplier on walkSpeed/sprintSpeed
 	[SerializeField] private float poopSpeedPenalty = 0.5f;
+	[SerializeField] private float peeDrainRate = 40f;   // bladder units drained per second while peeing
+	[SerializeField] private float poopDrainRate = 45f;  // bowel units drained per second while pooping
+
+	[Header("Relief FX")]
+	[SerializeField] private ParticleSystem peeParticle;   // child of player, assigned in Inspector
+	[SerializeField] private GameObject poopPrefab;        // spawned on poop, assigned in Inspector
+	[SerializeField] private Transform poopSpawnOrigin;    // usually the player transform
+	[SerializeField] private float poopSpawnBackDistance = 0.6f;
+	[SerializeField] private float poopGroundRayHeight = 2f;
+	[SerializeField] private LayerMask poopGroundMask = ~0;
 
 	[Header("Ocean Water")]
 	[SerializeField] private float oceanWaterThirstRestore = 15f;
@@ -47,6 +58,11 @@ public class LifeProcess : MonoBehaviour
 
 	// true while any need is being ignored long enough to slow the player
 	public bool IsSlowed => peeSlownessActive || poopSlownessActive;
+
+	// ── active relief processes ───────────────────────────────────
+	private bool isPeeing;
+	private bool isPooping;
+	public bool IsPooping => isPooping; // read by PlayerMovement to freeze
 
 	// ── ignore timers ─────────────────────────────────────────────
 	private float peeIgnoreTimer;
@@ -84,12 +100,21 @@ public class LifeProcess : MonoBehaviour
 			baseWalkSpeed = playerMovement.WalkSpeed;
 			baseSprintSpeed = playerMovement.SprintSpeed;
 		}
+
+		peeParticle.Stop();
 	}
 
 	private void Update()
 	{
+		if (Keyboard.current != null)
+		{
+			if (Keyboard.current.gKey.wasPressedThisFrame && ShouldPee) Pee();
+			if (Keyboard.current.hKey.wasPressedThisFrame && ShouldPoop) Poop();
+		}
+
 		DrainOverTime();
 		UpdateBladderAndBowel();
+		HandleRelief();
 		HandleIgnoreTimers();
 		ApplySpeedPenalties();
 	}
@@ -132,10 +157,12 @@ public class LifeProcess : MonoBehaviour
 	{
 		if (playerStats.IsDead) return;
 
-		// independent accumulators: fill passively over time, reset by Pee()/Poop(),
-		// topped up by Drink()/Eat()
-		BladderLevel = Mathf.Min(100f, BladderLevel + bladderFillRate * Time.deltaTime);
-		BowelLevel = Mathf.Min(100f, BowelLevel + bowelFillRate * Time.deltaTime);
+		// independent accumulators: fill passively over time, drained by Pee()/Poop(),
+		// topped up by Drink()/Eat(). Skip refill while actively relieving so the meter reaches zero.
+		if (!isPeeing)
+			BladderLevel = Mathf.Min(100f, BladderLevel + bladderFillRate * Time.deltaTime);
+		if (!isPooping)
+			BowelLevel = Mathf.Min(100f, BowelLevel + bowelFillRate * Time.deltaTime);
 
 		bool newShouldPee = BladderLevel >= peeThreshold;
 		bool newShouldPoop = BowelLevel >= poopThreshold;
@@ -150,6 +177,39 @@ public class LifeProcess : MonoBehaviour
 		{
 			ShouldPoop = true;
 			OnNeedPoop?.Invoke();
+		}
+	}
+
+	// ─────────────────────────────────────────
+	// Active relief — drain the meters gradually while peeing/pooping
+	// ─────────────────────────────────────────
+	private void HandleRelief()
+	{
+		if (isPeeing)
+		{
+			BladderLevel = Mathf.Max(0f, BladderLevel - peeDrainRate * Time.deltaTime);
+			if (BladderLevel <= 0f)
+			{
+				isPeeing = false;
+				ShouldPee = false;
+				peeIgnoreTimer = 0f;
+				peeSlownessActive = false;
+				if (playerMovement != null) playerMovement.WalkSpeed = baseWalkSpeed;
+				if (peeParticle != null) peeParticle.Stop();
+			}
+		}
+
+		if (isPooping)
+		{
+			BowelLevel = Mathf.Max(0f, BowelLevel - poopDrainRate * Time.deltaTime);
+			if (BowelLevel <= 0f)
+			{
+				isPooping = false;
+				ShouldPoop = false;
+				poopIgnoreTimer = 0f;
+				poopSlownessActive = false;
+				if (playerMovement != null) playerMovement.SprintSpeed = baseSprintSpeed;
+			}
 		}
 	}
 
@@ -217,25 +277,29 @@ public class LifeProcess : MonoBehaviour
 	// ─────────────────────────────────────────
 	public void Pee()
 	{
-		BladderLevel = 0f;
-		ShouldPee = false;
-		peeIgnoreTimer = 0f;
-		peeSlownessActive = false;
+		if (isPeeing) return;
+		isPeeing = true;
 
-		// restore speed immediately
-		if (playerMovement != null)
-			playerMovement.WalkSpeed = baseWalkSpeed;
+		if (peeParticle != null) peeParticle.Play();
 	}
 
 	public void Poop()
 	{
-		BowelLevel = 0f;
-		ShouldPoop = false;
-		poopIgnoreTimer = 0f;
-		poopSlownessActive = false;
+		if (isPooping) return;
+		isPooping = true;
 
-		if (playerMovement != null)
-			playerMovement.SprintSpeed = baseSprintSpeed;
+		if (poopPrefab != null)
+		{
+			Transform origin = poopSpawnOrigin != null ? poopSpawnOrigin : transform;
+
+			Vector3 pos = origin.position - origin.forward * poopSpawnBackDistance;
+			
+			if (Physics.Raycast(pos + Vector3.up * poopGroundRayHeight, Vector3.down,
+				out RaycastHit hit, poopGroundRayHeight * 2f, poopGroundMask))
+				pos = hit.point;
+			
+			Instantiate(poopPrefab, pos, poopPrefab.transform.rotation);
+		}
 	}
 
 	// ─────────────────────────────────────────

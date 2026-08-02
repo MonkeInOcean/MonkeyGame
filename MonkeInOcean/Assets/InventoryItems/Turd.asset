@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1037605f12990a54dba7193f987b4966, type: 3}
+  m_Name: Turd
+  m_EditorClassIdentifier: Assembly-CSharp::ItemData
+  itemName: Turd
+  icon: {fileID: 21300000, guid: 8f4dac57a6ac0254f8a6bd83c719d23b, type: 3}
+  description: Turd
+  maxStackSize: 10
+  itemType: 0
+  hungerRestore: -10
+  thirstRestore: 10
+  bowelIncrease: 5
+  bladderIncrease: 5
+  worldPrefab: {fileID: 3102760636206703698, guid: 79a2835110637394d8f8549aead054aa, type: 3}
