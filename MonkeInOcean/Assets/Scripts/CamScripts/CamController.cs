@@ -25,6 +25,7 @@ public class CamController : MonoBehaviour
 	[SerializeField] private Rigidbody playerRb;
 	[SerializeField] private Transform cameraTransform; // Main Camera, child of Player
 	[SerializeField] private PlayerMovement playerMovement;
+	[SerializeField] private LifeProcess lifeProcess;
 
 	private PlayerInputActions inputs;
 
@@ -34,7 +35,11 @@ public class CamController : MonoBehaviour
 	private float currentPitch;
 	private Vector3 currentOffset;
 
-	private void Awake() => inputs = new PlayerInputActions();
+	private void Awake()
+	{
+		inputs = new PlayerInputActions();
+		if (lifeProcess == null && playerBody != null) lifeProcess = playerBody.GetComponent<LifeProcess>();
+	}
 	private void OnEnable() => inputs.Player.Enable();
 	private void OnDisable() => inputs.Player.Disable();
 
@@ -79,6 +84,9 @@ public class CamController : MonoBehaviour
 	private void ReadInput()
 	{
 		if (InventoryController.GameplayBlocked) return;
+
+		// squatting locks the body in place, and the body yaw is this camera's yaw
+		if (lifeProcess != null && lifeProcess.IsPooping) return;
 
 		Vector2 look = inputs.Player.Look.ReadValue<Vector2>();
 		targetYaw += look.x * sensitivityX;
