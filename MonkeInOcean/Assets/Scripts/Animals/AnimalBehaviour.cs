@@ -22,7 +22,8 @@ public abstract class AnimalBehaviour : MonoBehaviour
 
 	[Header("World")]
 	[SerializeField] protected Terrain terrain;
-	[SerializeField] protected float waterSurfaceY = 97f;
+	// Defaults to the shared water line; the seeder overrides it via Initialize.
+	protected float waterSurfaceY = Ocean.WaterLevel.SurfaceY;
 
 	[Header("Sensing")]
 	[SerializeField] private float senseInterval = 0.2f;
