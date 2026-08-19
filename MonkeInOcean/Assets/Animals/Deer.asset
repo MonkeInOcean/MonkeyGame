@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 337488c89afb93041b825f5cdcbd5a38, type: 3}
+  m_Name: Deer
+  m_EditorClassIdentifier: Assembly-CSharp::AnimalProfile
+  animalName: Deer
+  prefab: {fileID: 3271708936231570652, guid: 8035150904064e847811314ffafdcb38, type: 3}
+  habitat: 0
+  scaleRange: {x: 1, y: 1}
+  isPredator: 0
+  walkSpeed: 1.5
+  fleeSpeed: 5
+  turnSpeed: 6
+  acceleration: 8
+  detectRadius: 12
+  giveUpRadius: 25
+  roamRadius: 20
+  fleeDistance: 18
+  idleDurationRange: {x: 2, y: 6}
+  attackRange: 2
+  attackDamage: 8
+  attackCooldown: 1.5
+  idleState: Idle_A
+  moveState: Walk
+  fastState: Run
+  alertState: Fear
+  attackState: Attack
