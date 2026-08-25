@@ -10,6 +10,7 @@ Shader "MonkeInOcean/Ocean"
 
         [Header(Shore)]
         _WaveShoreFalloff ("Wave Shore Falloff (m)", Float) = 8.0
+        _ShoreJitter      ("Shore Transition Jitter (m)", Range(0, 12)) = 3.0
 
         [Header(Reflection and Refraction)]
         _FresnelPower     ("Fresnel Power", Range(1, 8)) = 5.0
@@ -73,6 +74,7 @@ Shader "MonkeInOcean/Ocean"
                 float  _DepthFade;
                 float  _FloorColorDepth;
                 float  _WaveShoreFalloff;
+                float  _ShoreJitter;
                 float  _FresnelPower;
                 float  _RefractionStrength;
                 float  _Smoothness;
@@ -166,7 +168,10 @@ Shader "MonkeInOcean/Ocean"
                 // Damp waves toward flat water as the seabed rises to the surface, so
                 // islands and shorelines aren't flooded. Full waves stay in deep water.
                 float floorDepth = SampleFloorDepth(flatWS.xz);
-                float shoreFactor = smoothstep(0.0, max(_WaveShoreFalloff, 0.001), floorDepth);
+                // Jitter the depth the wave-calming keys off, so the boundary where waves
+                // settle down near land is an organic wavy line, not a clean depth contour.
+                float shoreJitter = (valueNoise(flatWS.xz * 0.12) - 0.5) * 2.0 * _ShoreJitter;
+                float shoreFactor = smoothstep(0.0, max(_WaveShoreFalloff, 0.001), floorDepth + shoreJitter);
                 displacedWS = lerp(flatWS, displacedWS, shoreFactor);
                 normalWS = normalize(lerp(float3(0, 1, 0), normalWS, shoreFactor));
                 foam *= shoreFactor;
@@ -247,10 +252,17 @@ Shader "MonkeInOcean/Ocean"
                 float3 refraction = SampleSceneColor(refractUV);
 
                 // ---- water body color by SEABED depth (shallow near islands -> deep offshore) ----
-                float floorFade = saturate(IN.floorDepth / max(_FloorColorDepth, 0.001));
+                // Jitter + smoothstep so the shallow->deep band reads as an organic gradient
+                // instead of a hard-coded contour ring around every island.
+                float bandJitter = (valueNoise(IN.positionWS.xz * 0.12 + _Time.y * 0.015) - 0.5) * 2.0 * _ShoreJitter;
+                float floorFade = smoothstep(0.0, max(_FloorColorDepth, 0.001), IN.floorDepth + bandJitter);
                 float3 waterColor = lerp(_ShallowColor.rgb, _DeepColor.rgb, floorFade);
-                // opacity of the tint still uses screen thickness so thin edges read through
-                float3 throughWater = lerp(refraction, waterColor, saturate(max(depthFade, floorFade) + 0.15));
+
+                // Tint opacity is driven mainly by how deep the seabed is: shallow water stays
+                // clear (the bottom shows through, lighter) and only deep water turns fully
+                // opaque. A little screen thickness keeps grazing edges reading as water.
+                float opacity = saturate(floorFade + depthFade * 0.25);
+                float3 throughWater = lerp(refraction, waterColor, opacity);
 
                 // ---- reflection (environment probe / skybox) ----
                 float3 R = reflect(-V, N);

@@ -23,7 +23,8 @@ public class PlayerMovement : MonoBehaviour
 	[SerializeField] private float bobFrequency = 0.8f;
 
 	[Header("Water")]
-	[SerializeField] private float waterSurfaceY = 95f;
+	// Single source of truth for the water line — see Ocean.WaterLevel.
+	private float waterSurfaceY => Ocean.WaterLevel.SurfaceY;
 	[SerializeField] private float eyeLevelOffset = 2.2f;
 
 	[Header("Jump")]
@@ -261,7 +262,12 @@ public class PlayerMovement : MonoBehaviour
 
 		float oxygenRatio = playerStats.GetOxygenPercent();
 		float currentSink = Mathf.Lerp(sinkForce * 1.5f, sinkForce * 0.3f, oxygenRatio);
-		swimVelocity.y -= currentSink * Time.fixedDeltaTime;
+
+		// Only sink while the head is actually underwater; at or above the surface
+		// the player floats and breathes instead of being dragged back down.
+		bool headUnderwater = (rb.position.y + eyeLevelOffset) < waterSurfaceY;
+		if (headUnderwater)
+			swimVelocity.y -= currentSink * Time.fixedDeltaTime;
 
 		rb.linearVelocity = swimVelocity;
 	}
@@ -281,7 +287,10 @@ public class PlayerMovement : MonoBehaviour
 
 	private void HandleOxygen()
 	{
-		if (isSubmerged || isUndergroundGrounded)
+		// Breathe whenever the head is above water (surfaced or on land); only drain
+		// while the head is submerged or while walking the seabed.
+		bool headUnderwater = (transform.position.y + eyeLevelOffset) < waterSurfaceY;
+		if (headUnderwater || isUndergroundGrounded)
 			playerStats.DrainOxygen(isUndergroundGrounded, Time.deltaTime);
 		else
 			playerStats.RegenOxygen(Time.deltaTime);

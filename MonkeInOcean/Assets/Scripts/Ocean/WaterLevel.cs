@@ -1,12 +1,11 @@
 namespace Ocean
 {
     /// <summary>
-    /// Canonical world-space height of the ocean surface.
-    /// This is the single source of truth the rendering stack (ocean mesh,
-    /// underwater renderer feature, caustics) keys off. Gameplay scripts
-    /// (PlayerMovement, UnderwaterFog, the seeders) historically stored their
-    /// own serialized copies — keep those in sync with this value in the
-    /// inspector. OceanController defaults its surface height from here.
+    /// Canonical world-space height of the ocean surface — the single source of
+    /// truth for both rendering (ocean mesh, underwater renderer feature,
+    /// caustics) and gameplay (PlayerMovement, the seeders, animals). All of
+    /// those read this directly instead of keeping their own serialized copies,
+    /// so the water line can never drift out of sync. Change it here only.
     /// </summary>
     public static class WaterLevel
     {

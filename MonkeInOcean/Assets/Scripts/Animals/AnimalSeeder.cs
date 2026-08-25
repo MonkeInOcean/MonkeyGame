@@ -23,7 +23,8 @@ public class AnimalSeeder : MonoBehaviour
 	[SerializeField] private List<SpawnEntry> entries = new List<SpawnEntry>();
 
 	[Header("Water Line")]
-	[SerializeField] private float waterSurfaceY = 97f;
+	// Single source of truth for the water line — see Ocean.WaterLevel.
+	private float waterSurfaceY => Ocean.WaterLevel.SurfaceY;
 	[SerializeField] private float shoreMargin = 1.5f;
 
 	[Header("Land Placement")]
